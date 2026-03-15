@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "prefect-gcp-batch"
+version = "0.1.0"
+description = "Prefect worker for Google Cloud Batch — run flows on any GCE machine type with Spot VM support"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+dependencies = [
+    "prefect>=3.0",
+    "prefect-gcp>=0.6",
+    "google-cloud-batch>=0.17",
+    "python-slugify>=8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+]
+
+[project.entry-points."prefect.collections"]
+prefect_gcp_batch = "prefect_gcp_batch"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

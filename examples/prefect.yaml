@@ -1,0 +1,12 @@
+name: prefect-gcp-batch-example
+
+deployments:
+- name: mandelbrot-example
+  entrypoint: examples/mandelbrot_flow.py:render_mandelbrot
+  work_pool:
+    name: batch-example
+  parameters:
+    width: 4096
+    height: 4096
+    max_iterations: 1000
+  schedules: []
