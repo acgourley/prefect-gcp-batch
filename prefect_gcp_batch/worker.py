@@ -401,6 +401,14 @@ class CloudBatchWorker(
 
         # Pass Prefect env vars (API URL, API key, flow-run ID, etc.) to the container.
         env_vars = {k: v for k, v in configuration.env.items() if v is not None}
+        # When GPU is attached, tell the NVIDIA container runtime to expose it.
+        # Without these, torch.cuda.is_available() returns False inside the container.
+        gpu_type = spec.get("gpu_type")
+        if isinstance(gpu_type, str) and gpu_type.lower() == "none":
+            gpu_type = None
+        if gpu_type:
+            env_vars.setdefault("NVIDIA_VISIBLE_DEVICES", "all")
+            env_vars.setdefault("NVIDIA_DRIVER_CAPABILITIES", "compute,utility,video")
         env = batch_v1.Environment(variables=env_vars)
 
         runnable = batch_v1.Runnable(container=container, environment=env)
