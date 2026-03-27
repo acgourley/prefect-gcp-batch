@@ -32,6 +32,8 @@ except ImportError:
         "pip install google-cloud-batch"
     )
 
+from google.api_core.exceptions import NotFound
+
 if TYPE_CHECKING:
     import anyio
 
@@ -512,7 +514,17 @@ class CloudBatchWorker(
         last_state = None
 
         while True:
-            job = await client.get_job(name=job_name)
+            try:
+                job = await client.get_job(name=job_name)
+            except NotFound:
+                # Job was deleted (e.g. via kill_infrastructure cancellation).
+                logger.info("Cloud Batch job was deleted (cancelled).")
+                deleted_job = batch_v1.Job()
+                deleted_job.status.state = (
+                    batch_v1.JobStatus.State.DELETION_IN_PROGRESS
+                )
+                return deleted_job
+
             state = job.status.state
 
             if state != last_state:

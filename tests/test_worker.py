@@ -9,6 +9,7 @@ import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from google.api_core.exceptions import NotFound
 from google.cloud import batch_v1
 from prefect_gcp.credentials import GcpCredentials
 
@@ -339,6 +340,25 @@ class TestWatchJob:
 
         assert result.status.state == batch_v1.JobStatus.State.SUCCEEDED
         assert mock_client.get_job.await_count == 3
+
+    async def test_handles_deleted_job_on_cancellation(self):
+        """If kill_infrastructure deletes the job while _watch_job is polling,
+        get_job raises NotFound. The watcher should return gracefully."""
+        worker = _make_worker()
+        mock_client = AsyncMock()
+        mock_client.get_job.side_effect = [
+            _make_batch_job_status(batch_v1.JobStatus.State.RUNNING),
+            NotFound("job not found"),
+        ]
+
+        result = await worker._watch_job(
+            "projects/p/locations/r/jobs/j",
+            mock_client,
+            _make_configuration(),
+            MagicMock(),
+        )
+
+        assert result.status.state == batch_v1.JobStatus.State.DELETION_IN_PROGRESS
 
 
 class TestKillInfrastructure:
