@@ -115,7 +115,25 @@ prefect deployment run 'my-flow/my-deployment'
 | `service_account` | str | None | Service account email for the VM |
 | `allowed_zones` | list | None | Zones for Spot availability |
 | `vpc_network` | str | None | VPC network for the VM |
+| `gcs_volumes` | dict | None | GCS buckets to mount as volumes (see [GCS Volumes](#gcs-volumes)) |
 | `job_watch_poll_interval` | float | `30.0` | Seconds between status polls |
+
+## GCS Volumes
+
+Mount GCS buckets directly on the VM using [Cloud Storage FUSE](https://cloud.google.com/storage/docs/cloud-storage-fuse/overview). This avoids downloading data with `gsutil` — the bucket contents appear as a local filesystem.
+
+Set `gcs_volumes` as a dict mapping bucket names to mount paths:
+
+```json
+{
+  "my-source-bucket": "/mnt/source",
+  "my-output-bucket": "/mnt/output"
+}
+```
+
+Your flow code can then read from `/mnt/source` and write to `/mnt/output` as if they were local directories.
+
+The VM's service account needs `roles/storage.objectViewer` (read) or `roles/storage.objectAdmin` (read/write) on the mounted buckets.
 
 ## Spot Preemption
 

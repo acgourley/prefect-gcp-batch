@@ -9,7 +9,7 @@ and Docker container execution.
 import asyncio
 import re
 import shlex
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import uuid4
 
 from pydantic import Field
@@ -45,11 +45,23 @@ _DISALLOWED_GCP_LABEL_CHARACTERS = re.compile(r"[^-a-zA-Z0-9_]+")
 # 50002: VM terminated by GCE maintenance
 # 50003: Task failed due to resource constraints
 # 50006: VM preempted during task startup
-_INFRASTRUCTURE_EXIT_CODES = [50001, 50002, 50003, 50006]
+# 75:    EX_TEMPFAIL — transient infra issue (e.g. gcsfuse mount flake)
+_INFRASTRUCTURE_EXIT_CODES = [50001, 50002, 50003, 50006, 75]
 
 # Maximum length for Cloud Batch job IDs.
 # Must match [a-z]([a-z0-9-]{0,61}[a-z0-9])? — so 63 chars total.
 _MAX_JOB_ID_LENGTH = 63
+
+
+def _coerce_bool(value: object, default: bool = False) -> bool:
+    """Coerce a template-resolved value to bool.
+
+    Prefect template resolution can turn booleans into strings like
+    ``"True"`` or ``"False"``.  This normalises them back.
+    """
+    if isinstance(value, str):
+        return value.lower() in ("true", "1", "yes")
+    return bool(value) if value is not None else default
 
 
 class CloudBatchWorkerVariables(BaseVariables):
@@ -142,6 +154,16 @@ class CloudBatchWorkerVariables(BaseVariables):
             "If not set, the default network is used."
         ),
     )
+    gcs_volumes: Optional[Dict[str, str]] = Field(
+        default=None,
+        title="GCS Volume Mounts",
+        description=(
+            "GCS buckets to mount as volumes on the VM. "
+            "Map of bucket name to mount path, e.g. "
+            '{"my-bucket": "/mnt/data"}. Uses Cloud Storage FUSE.'
+        ),
+        examples=[{"my-bucket": "/mnt/data"}],
+    )
     job_watch_poll_interval: float = Field(
         default=30.0,
         title="Poll Interval (Seconds)",
@@ -182,6 +204,7 @@ class CloudBatchWorkerJobConfiguration(BaseJobConfiguration):
                 "service_account": "{{ service_account }}",
                 "allowed_zones": "{{ allowed_zones }}",
                 "vpc_network": "{{ vpc_network }}",
+                "gcs_volumes": "{{ gcs_volumes }}",
             }
         ),
     )
@@ -330,9 +353,22 @@ class CloudBatchWorker(
         if isinstance(command, str):
             command = shlex.split(command)
 
+        # Build GCS volume mounts if configured.
+        volumes: List[batch_v1.Volume] = []
+        gcs_volumes = spec.get("gcs_volumes")
+        if gcs_volumes and isinstance(gcs_volumes, dict):
+            for bucket, mount_path in gcs_volumes.items():
+                volumes.append(
+                    batch_v1.Volume(
+                        gcs=batch_v1.GCS(remote_path=bucket),
+                        mount_path=mount_path,
+                    )
+                )
+
         container = batch_v1.Runnable.Container(
             image_uri=spec["image"],
             commands=command,
+            volumes=[v.mount_path for v in volumes],
         )
 
         # Pass Prefect env vars (API URL, API key, flow-run ID, etc.) to the container.
@@ -344,6 +380,7 @@ class CloudBatchWorker(
         # Task spec with infrastructure-failure retry policy.
         task_spec = batch_v1.TaskSpec(
             runnables=[runnable],
+            volumes=volumes,
             max_retry_count=int(spec.get("max_retry_count", 3)),
             max_run_duration=f"{int(spec.get('max_run_duration_hours', 24)) * 3600}s",
             lifecycle_policies=[
@@ -357,9 +394,7 @@ class CloudBatchWorker(
         )
 
         # Allocation policy: machine type, Spot vs standard, boot disk.
-        is_spot = spec.get("spot", False)
-        if isinstance(is_spot, str):
-            is_spot = is_spot.lower() in ("true", "1", "yes")
+        is_spot = _coerce_bool(spec.get("spot", False))
 
         instance_policy = batch_v1.AllocationPolicy.InstancePolicy(
             machine_type=spec.get("machine_type", "e2-standard-4"),
