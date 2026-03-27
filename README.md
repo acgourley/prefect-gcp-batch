@@ -116,6 +116,9 @@ prefect deployment run 'my-flow/my-deployment'
 | `allowed_zones` | list | None | Zones for Spot availability |
 | `vpc_network` | str | None | VPC network for the VM |
 | `gcs_volumes` | dict | None | GCS buckets to mount as volumes (see [GCS Volumes](#gcs-volumes)) |
+| `gpu_type` | str | None | GPU accelerator type (e.g. `nvidia-l4`, `nvidia-tesla-t4`) |
+| `gpu_count` | int | `1` | Number of GPUs to attach (only used when `gpu_type` is set) |
+| `install_gpu_drivers` | bool | `true` | Auto-install NVIDIA drivers (only used when `gpu_type` is set) |
 | `job_watch_poll_interval` | float | `30.0` | Seconds between status polls |
 
 ## GCS Volumes

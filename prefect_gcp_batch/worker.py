@@ -164,6 +164,29 @@ class CloudBatchWorkerVariables(BaseVariables):
         ),
         examples=[{"my-bucket": "/mnt/data"}],
     )
+    gpu_type: Optional[str] = Field(
+        default=None,
+        title="GPU Type",
+        description=(
+            "GPU accelerator type to attach to the VM. "
+            "e.g. 'nvidia-l4', 'nvidia-tesla-t4'. "
+            "If not set, no GPU is attached."
+        ),
+        examples=["nvidia-l4", "nvidia-tesla-t4"],
+    )
+    gpu_count: int = Field(
+        default=1,
+        title="GPU Count",
+        description="Number of GPUs to attach (only used when gpu_type is set).",
+    )
+    install_gpu_drivers: bool = Field(
+        default=True,
+        title="Install GPU Drivers",
+        description=(
+            "Let Cloud Batch install NVIDIA GPU drivers automatically. "
+            "Only used when gpu_type is set."
+        ),
+    )
     job_watch_poll_interval: float = Field(
         default=30.0,
         title="Poll Interval (Seconds)",
@@ -205,6 +228,9 @@ class CloudBatchWorkerJobConfiguration(BaseJobConfiguration):
                 "allowed_zones": "{{ allowed_zones }}",
                 "vpc_network": "{{ vpc_network }}",
                 "gcs_volumes": "{{ gcs_volumes }}",
+                "gpu_type": "{{ gpu_type }}",
+                "gpu_count": "{{ gpu_count }}",
+                "install_gpu_drivers": "{{ install_gpu_drivers }}",
             }
         ),
     )
@@ -409,10 +435,27 @@ class CloudBatchWorker(
             ),
         )
 
+        # GPU accelerator attachment.
+        gpu_type = spec.get("gpu_type")
+        # Template resolution can turn None into the string "None"
+        if isinstance(gpu_type, str) and gpu_type.lower() == "none":
+            gpu_type = None
+        install_gpu_drivers = False
+        if gpu_type:
+            gpu_count = int(spec.get("gpu_count", 1))
+            instance_policy.accelerators = [
+                batch_v1.AllocationPolicy.Accelerator(
+                    type_=gpu_type,
+                    count=gpu_count,
+                ),
+            ]
+            install_gpu_drivers = _coerce_bool(spec.get("install_gpu_drivers", True), default=True)
+
         allocation = batch_v1.AllocationPolicy(
             instances=[
                 batch_v1.AllocationPolicy.InstancePolicyOrTemplate(
                     policy=instance_policy,
+                    install_gpu_drivers=install_gpu_drivers,
                 )
             ],
         )
