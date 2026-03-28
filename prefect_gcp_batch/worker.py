@@ -384,12 +384,16 @@ class CloudBatchWorker(
         # Build GCS volume mounts if configured.
         volumes: List[batch_v1.Volume] = []
         gcs_volumes = spec.get("gcs_volumes")
+        gcs_mount_options = spec.get("gcs_mount_options") or []
+        if isinstance(gcs_mount_options, str):
+            gcs_mount_options = [gcs_mount_options]
         if gcs_volumes and isinstance(gcs_volumes, dict):
             for bucket, mount_path in gcs_volumes.items():
                 volumes.append(
                     batch_v1.Volume(
                         gcs=batch_v1.GCS(remote_path=bucket),
                         mount_path=mount_path,
+                        mount_options=gcs_mount_options,
                     )
                 )
 
